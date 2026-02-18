@@ -1,0 +1,17 @@
+imap:
+  host: imap.example.com
+  port: 993
+  tls: true
+  starttls: false
+  insecure_skip_verify: false
+smtp:
+  host: smtp.example.com
+  port: 587
+  tls: false
+  starttls: true
+  insecure_skip_verify: false
+auth:
+  username: you@example.com
+  password: app-password
+defaults:
+  drafts_mailbox: Drafts
