@@ -34,3 +34,6 @@ go.work.sum
 
 # Logs
 *.log
+
+# Local build output
+/mailcli
