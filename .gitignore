@@ -1,0 +1,36 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.a
+*.o
+*.prof
+*.cover
+*.trace
+*.pprof
+*.bench
+
+# Build/output dirs
+bin/
+build/
+dist/
+coverage/
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Editor/OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.tmp
+.DS_Store
+
+# Logs
+*.log

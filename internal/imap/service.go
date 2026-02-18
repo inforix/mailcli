@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mailcli/internal/config"
+	"mailcli/internal/email"
 
 	"github.com/emersion/go-imap"
 	imapclient "github.com/emersion/go-imap/client"
@@ -28,7 +29,7 @@ type Client interface {
 	Create(name string) error
 	UidSearch(criteria *imap.SearchCriteria) ([]uint32, error)
 	UidFetch(seqset *imap.SeqSet, items []imap.FetchItem, ch chan *imap.Message) error
-	UidStore(seqset *imap.SeqSet, item imap.StoreItem, flags []interface{}) error
+	UidStore(seqset *imap.SeqSet, item imap.StoreItem, value interface{}, ch chan *imap.Message) error
 	UidMove(seqset *imap.SeqSet, mailbox string) error
 	UidCopy(seqset *imap.SeqSet, mailbox string) error
 	Append(mailbox string, flags []string, date time.Time, msg imap.Literal) error
@@ -139,6 +140,16 @@ func (s *Service) SearchMessages(cfg config.Config, mailbox, query string, page,
 	return s.listMessagesWithCriteria(cfg, mailbox, criteria, page, pageSize)
 }
 
+func (s *Service) ListThreads(cfg config.Config, mailbox string, page, pageSize int) ([]ThreadSummary, int, error) {
+	return s.listThreadsWithCriteria(cfg, mailbox, nil, page, pageSize)
+}
+
+func (s *Service) SearchThreads(cfg config.Config, mailbox, query string, page, pageSize int) ([]ThreadSummary, int, error) {
+	criteria := imap.NewSearchCriteria()
+	criteria.Text = []string{query}
+	return s.listThreadsWithCriteria(cfg, mailbox, criteria, page, pageSize)
+}
+
 func (s *Service) listMessagesWithCriteria(cfg config.Config, mailbox string, criteria *imap.SearchCriteria, page, pageSize int) ([]MessageSummary, int, error) {
 	var messages []MessageSummary
 	var total int
@@ -215,6 +226,119 @@ func (s *Service) listMessagesWithCriteria(cfg config.Config, mailbox string, cr
 	return messages, total, err
 }
 
+func (s *Service) listThreadsWithCriteria(cfg config.Config, mailbox string, criteria *imap.SearchCriteria, page, pageSize int) ([]ThreadSummary, int, error) {
+	var threads []ThreadSummary
+	var total int
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	err := s.withClient(cfg, func(c Client) error {
+		if _, err := c.Select(mailbox, true); err != nil {
+			return err
+		}
+
+		threadClient, ok := c.(threadClient)
+		if !ok {
+			return ErrThreadUnsupported
+		}
+
+		caps, err := threadClient.Capability()
+		if err != nil {
+			return err
+		}
+
+		algorithm, ok := selectThreadAlgorithm(caps)
+		if !ok {
+			return ErrThreadUnsupported
+		}
+
+		threadsByUID, status, err := executeThread(threadClient, algorithm, "UTF-8", criteria)
+		if err != nil && status != nil && status.Code == imap.CodeBadCharset {
+			threadsByUID, _, err = executeThread(threadClient, algorithm, "US-ASCII", criteria)
+		}
+		if err != nil {
+			return err
+		}
+
+		meta := make([]threadMeta, 0, len(threadsByUID))
+		for _, uids := range threadsByUID {
+			if len(uids) == 0 {
+				continue
+			}
+			latest := maxUID(uids)
+			meta = append(meta, threadMeta{
+				UIDs:      uids,
+				LatestUID: latest,
+				Count:     len(uids),
+			})
+		}
+
+		sort.Slice(meta, func(i, j int) bool {
+			return meta[i].LatestUID > meta[j].LatestUID
+		})
+
+		total = len(meta)
+		if total == 0 {
+			return nil
+		}
+
+		start := (page - 1) * pageSize
+		if start >= total {
+			return nil
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+		pageMeta := meta[start:end]
+
+		seqset := new(imap.SeqSet)
+		for _, entry := range pageMeta {
+			seqset.AddNum(entry.LatestUID)
+		}
+
+		items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchUid}
+		ch := make(chan *imap.Message, len(pageMeta))
+		done := make(chan error, 1)
+		go func() {
+			done <- c.UidFetch(seqset, items, ch)
+		}()
+
+		messageByUID := make(map[uint32]*imap.Message, len(pageMeta))
+		for msg := range ch {
+			if msg == nil {
+				continue
+			}
+			messageByUID[msg.Uid] = msg
+		}
+		if err := <-done; err != nil {
+			return err
+		}
+
+		for _, entry := range pageMeta {
+			summary := ThreadSummary{
+				UID:   entry.LatestUID,
+				Count: entry.Count,
+			}
+			if msg := messageByUID[entry.LatestUID]; msg != nil && msg.Envelope != nil {
+				summary.Subject = msg.Envelope.Subject
+				summary.From = formatIMAPAddresses(msg.Envelope.From)
+				summary.Date = msg.Envelope.Date
+			}
+			threads = append(threads, summary)
+		}
+
+		return nil
+	})
+
+	return threads, total, err
+}
+
 func (s *Service) ReadMessage(cfg config.Config, mailbox string, uid uint32) (MessageDetail, error) {
 	detail := MessageDetail{}
 	err := s.withClient(cfg, func(c Client) error {
@@ -257,6 +381,7 @@ func (s *Service) ReadMessage(cfg config.Config, mailbox string, uid uint32) (Me
 			return err
 		}
 
+		var htmlBody string
 		for {
 			part, err := reader.NextPart()
 			if err == io.EOF {
@@ -275,6 +400,13 @@ func (s *Service) ReadMessage(cfg config.Config, mailbox string, uid uint32) (Me
 					}
 					detail.TextBody = string(data)
 				}
+				if strings.HasPrefix(contentType, "text/html") && htmlBody == "" {
+					data, err := io.ReadAll(part.Body)
+					if err != nil {
+						return err
+					}
+					htmlBody = string(data)
+				}
 			case *mail.AttachmentHeader:
 				filename, err := header.Filename()
 				if err != nil {
@@ -282,6 +414,11 @@ func (s *Service) ReadMessage(cfg config.Config, mailbox string, uid uint32) (Me
 				}
 				detail.Attachments = append(detail.Attachments, filename)
 			}
+		}
+
+		detail.HTMLBody = htmlBody
+		if detail.TextBody == "" && htmlBody != "" {
+			detail.TextBody = email.StripHTMLTags(htmlBody)
 		}
 
 		return nil
@@ -336,7 +473,7 @@ func (s *Service) DeleteMessage(cfg config.Config, mailbox string, uid uint32) e
 		seqset := new(imap.SeqSet)
 		seqset.AddNum(uid)
 		item := imap.FormatFlagsOp(imap.AddFlags, true)
-		if err := c.UidStore(seqset, item, []interface{}{imap.DeletedFlag}); err != nil {
+		if err := c.UidStore(seqset, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
 			return err
 		}
 		expunge := make(chan uint32)
@@ -364,7 +501,7 @@ func (s *Service) MoveMessage(cfg config.Config, mailbox string, uid uint32, des
 			return err
 		}
 		item := imap.FormatFlagsOp(imap.AddFlags, true)
-		if err := c.UidStore(seqset, item, []interface{}{imap.DeletedFlag}); err != nil {
+		if err := c.UidStore(seqset, item, []interface{}{imap.DeletedFlag}, nil); err != nil {
 			return err
 		}
 		expunge := make(chan uint32)
@@ -386,7 +523,7 @@ func (s *Service) AddTag(cfg config.Config, mailbox string, uid uint32, tag stri
 		seqset := new(imap.SeqSet)
 		seqset.AddNum(uid)
 		item := imap.FormatFlagsOp(imap.AddFlags, true)
-		return c.UidStore(seqset, item, []interface{}{tag})
+		return c.UidStore(seqset, item, []interface{}{tag}, nil)
 	})
 }
 
@@ -445,6 +582,22 @@ func (s *Service) DownloadAttachments(cfg config.Config, mailbox string, uid uin
 	}
 
 	return saved, nil
+}
+
+type threadMeta struct {
+	UIDs      []uint32
+	LatestUID uint32
+	Count     int
+}
+
+func maxUID(uids []uint32) uint32 {
+	var max uint32
+	for _, uid := range uids {
+		if uid > max {
+			max = uid
+		}
+	}
+	return max
 }
 
 func formatIMAPAddresses(addrs []*imap.Address) string {

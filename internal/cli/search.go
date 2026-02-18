@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"mailcli/internal/config"
@@ -13,6 +14,7 @@ func newSearchCmd() *cobra.Command {
 	var mailbox string
 	var page int
 	var pageSize int
+	var threads bool
 
 	cmd := &cobra.Command{
 		Use:   "search <query>",
@@ -30,6 +32,20 @@ func newSearchCmd() *cobra.Command {
 			}
 
 			service := imap.NewService()
+			if threads {
+				threadSummaries, total, err := service.SearchThreads(cfg, mailbox, query, page, pageSize)
+				if err != nil {
+					if !errors.Is(err, imap.ErrThreadUnsupported) {
+						return err
+					}
+					fmt.Fprintln(cmd.ErrOrStderr(), "Server does not support THREAD; showing messages instead.")
+				} else {
+					fmt.Fprintf(cmd.OutOrStdout(), "Mailbox: %s (threads %d)\n", mailbox, total)
+					printThreads(cmd.OutOrStdout(), threadSummaries)
+					return nil
+				}
+			}
+
 			messages, total, err := service.SearchMessages(cfg, mailbox, query, page, pageSize)
 			if err != nil {
 				return err
@@ -44,6 +60,7 @@ func newSearchCmd() *cobra.Command {
 	cmd.Flags().StringVar(&mailbox, "mailbox", "INBOX", "Mailbox name")
 	cmd.Flags().IntVar(&page, "page", 1, "Page number (1-based, newest first)")
 	cmd.Flags().IntVar(&pageSize, "page-size", 20, "Messages per page")
+	cmd.Flags().BoolVar(&threads, "threads", false, "Show thread summaries when supported")
 
 	return cmd
 }

@@ -19,5 +19,14 @@ type MessageDetail struct {
 	Cc          string
 	Date        time.Time
 	TextBody    string
+	HTMLBody    string
 	Attachments []string
+}
+
+type ThreadSummary struct {
+	UID     uint32
+	Count   int
+	Subject string
+	From    string
+	Date    time.Time
 }

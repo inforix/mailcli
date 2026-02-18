@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -25,12 +26,19 @@ func loadBody(body, bodyFile string) (string, error) {
 	if bodyFile == "" {
 		return body, nil
 	}
+	if body != "" {
+		return "", fmt.Errorf("use either --body or --body-file")
+	}
+	if bodyFile == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
 	data, err := os.ReadFile(bodyFile)
 	if err != nil {
 		return "", err
-	}
-	if body != "" {
-		return "", fmt.Errorf("use either --body or --body-file")
 	}
 	return string(data), nil
 }

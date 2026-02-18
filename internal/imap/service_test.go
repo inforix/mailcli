@@ -42,7 +42,7 @@ func (m *mockClient) UidFetch(seqset *imap.SeqSet, items []imap.FetchItem, ch ch
 	close(ch)
 	return nil
 }
-func (m *mockClient) UidStore(seqset *imap.SeqSet, item imap.StoreItem, flags []interface{}) error {
+func (m *mockClient) UidStore(seqset *imap.SeqSet, item imap.StoreItem, value interface{}, ch chan *imap.Message) error {
 	return nil
 }
 func (m *mockClient) UidMove(seqset *imap.SeqSet, mailbox string) error { return nil }

@@ -12,6 +12,7 @@ import (
 
 func newReadCmd() *cobra.Command {
 	var mailbox string
+	var showHTML bool
 
 	cmd := &cobra.Command{
 		Use:   "read <uid>",
@@ -57,12 +58,17 @@ func newReadCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Attachments: %s\n", detail.Attachments)
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "")
-			fmt.Fprintln(cmd.OutOrStdout(), detail.TextBody)
+			body := detail.TextBody
+			if showHTML && detail.HTMLBody != "" {
+				body = detail.HTMLBody
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), body)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&mailbox, "mailbox", "INBOX", "Mailbox name")
+	cmd.Flags().BoolVar(&showHTML, "html", false, "Show raw HTML body when available")
 
 	return cmd
 }

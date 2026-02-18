@@ -57,9 +57,11 @@ MAILCLI_AUTH_PASSWORD=app-password
 ```bash
 ./mailcli status
 ./mailcli inbox list --page 1 --page-size 20
+./mailcli inbox list --threads
 ./mailcli mail list --mailbox Archive
 ./mailcli search "invoice" --mailbox INBOX
 ./mailcli read 12345
+./mailcli read 12345 --html
 
 ./mailcli send \
   --to "alice@example.com,bob@example.com" \
