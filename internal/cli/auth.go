@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"mailcli/internal/config"
+	"mailcli/internal/secrets"
 
 	"github.com/spf13/cobra"
 )
@@ -14,6 +17,7 @@ func newAuthCmd() *cobra.Command {
 		Short: "Authentication and config setup",
 	}
 	cmd.AddCommand(newAuthLoginCmd())
+	cmd.AddCommand(newAuthKeyringCmd())
 	return cmd
 }
 
@@ -40,10 +44,12 @@ func newAuthLoginCmd() *cobra.Command {
 		Use:   "login",
 		Short: "Store IMAP/SMTP credentials and configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
+			passwordChanged := cmd.Flags().Changed("password")
+			usernameChanged := cmd.Flags().Changed("username")
 
 			if cmd.Flags().Changed("imap-host") {
 				cfg.IMAP.Host = imapHost
@@ -80,15 +86,45 @@ func newAuthLoginCmd() *cobra.Command {
 			if cmd.Flags().Changed("username") {
 				cfg.Auth.Username = username
 			}
-			if cmd.Flags().Changed("password") {
-				cfg.Auth.Password = password
-			}
 			if cmd.Flags().Changed("drafts-mailbox") {
 				cfg.Defaults.DraftsMailbox = draftsMailbox
 			}
 
+			if usernameChanged && !passwordChanged && (cfg.Auth.PasswordSource == "" || cfg.Auth.PasswordSource == "keyring") {
+				cfg.Auth.Password = ""
+				cfg.Auth.PasswordSource = ""
+				if cfg.Auth.Username != "" {
+					loaded, err := secrets.GetPassword(cfg.Auth.Username)
+					if err != nil && !errors.Is(err, secrets.ErrSecretNotFound) {
+						return err
+					}
+					if err == nil {
+						cfg.Auth.Password = loaded
+						cfg.Auth.PasswordSource = "keyring"
+					}
+				}
+			}
+
+			if passwordChanged {
+				if password == "" {
+					return fmt.Errorf("password is required")
+				}
+				cfg.Auth.Password = password
+				cfg.Auth.PasswordSource = "flags"
+			}
+
 			if err := config.Validate(cfg); err != nil {
 				return err
+			}
+
+			if passwordChanged {
+				if err := secrets.SetPassword(cfg.Auth.Username, password); err != nil {
+					return err
+				}
+			}
+
+			if passwordChanged || cfg.Auth.PasswordSource == "keyring" || cfg.Auth.PasswordSource == "env" {
+				cfg.Auth.Password = ""
 			}
 
 			path, err := config.Save(cfg)
@@ -97,6 +133,9 @@ func newAuthLoginCmd() *cobra.Command {
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Config saved to %s\n", path)
+			if passwordChanged {
+				fmt.Fprintln(cmd.OutOrStdout(), "Password stored in keyring.")
+			}
 			return nil
 		},
 	}
@@ -116,6 +155,62 @@ func newAuthLoginCmd() *cobra.Command {
 	cmd.Flags().StringVar(&username, "username", "", "Username")
 	cmd.Flags().StringVar(&password, "password", "", "Password or app password")
 	cmd.Flags().StringVar(&draftsMailbox, "drafts-mailbox", "", "Drafts mailbox name")
+
+	return cmd
+}
+
+func newAuthKeyringCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "keyring [backend]",
+		Short: "Show or set keyring backend",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				info, err := secrets.ResolveKeyringBackendInfo()
+				if err != nil {
+					return err
+				}
+
+				cfg, err := config.LoadFile()
+				if err != nil {
+					return err
+				}
+
+				configValue := cfg.KeyringBackend
+				if strings.TrimSpace(configValue) == "" {
+					configValue = "(unset)"
+				}
+
+				fmt.Fprintf(cmd.OutOrStdout(), "effective_backend: %s\nsource: %s\nconfig_backend: %s\n", info.Value, info.Source, configValue)
+				if info.Source == "env" {
+					fmt.Fprintln(cmd.OutOrStdout(), "note: MAILCLI_KEYRING_BACKEND overrides config")
+				}
+				return nil
+			}
+
+			backend := strings.ToLower(strings.TrimSpace(args[0]))
+			switch backend {
+			case "auto", "keychain", "file":
+			default:
+				return fmt.Errorf("invalid backend %q (expected auto, keychain, or file)", backend)
+			}
+
+			cfg, err := config.LoadFile()
+			if err != nil {
+				return err
+			}
+
+			cfg.KeyringBackend = backend
+
+			path, err := config.Save(cfg)
+			if err != nil {
+				return err
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Keyring backend set to %s in %s\n", backend, path)
+			return nil
+		},
+	}
 
 	return cmd
 }

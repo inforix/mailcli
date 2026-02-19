@@ -29,7 +29,7 @@ func newMailListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List messages",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

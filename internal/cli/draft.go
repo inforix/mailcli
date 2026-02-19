@@ -43,7 +43,7 @@ func newDraftSaveCmd() *cobra.Command {
 		Use:   "save",
 		Short: "Save a draft to the Drafts mailbox",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
@@ -169,7 +169,7 @@ func newDraftListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List drafts",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
@@ -213,7 +213,7 @@ func newDraftSendCmd() *cobra.Command {
 				return fmt.Errorf("invalid uid: %s", args[0])
 			}
 
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

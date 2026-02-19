@@ -29,10 +29,13 @@ smtp:
   insecure_skip_verify: false
 auth:
   username: you@example.com
-  password: app-password
+keyring_backend: auto
 defaults:
   drafts_mailbox: Drafts
 ```
+
+Passwords are stored in your OS keychain (or an encrypted file backend) instead of the config file.
+Use `mailcli auth login --password ...` to save the password to the keyring.
 
 Environment variable overrides are supported with the `MAILCLI_` prefix. Nested keys use underscores:
 
@@ -41,7 +44,13 @@ MAILCLI_IMAP_HOST=imap.example.com
 MAILCLI_SMTP_HOST=smtp.example.com
 MAILCLI_AUTH_USERNAME=you@example.com
 MAILCLI_AUTH_PASSWORD=app-password
+MAILCLI_KEYRING_BACKEND=auto
+MAILCLI_KEYRING_PASSWORD=...
 ```
+
+Keyring backend options:
+`auto` (default), `keychain` (macOS), `file` (encrypted on-disk keyring; requires `MAILCLI_KEYRING_PASSWORD` in non-interactive environments).
+Use `mailcli auth keyring [backend]` to show or set the backend.
 
 ## Quick Setup
 

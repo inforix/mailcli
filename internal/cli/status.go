@@ -14,7 +14,7 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show mailbox status",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

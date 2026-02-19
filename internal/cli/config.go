@@ -28,7 +28,7 @@ func newConfigShowCmd() *cobra.Command {
 		Use:   "show",
 		Short: "Show effective configuration",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

@@ -12,6 +12,7 @@ smtp:
   insecure_skip_verify: false
 auth:
   username: you@example.com
-  password: app-password
+  # password is stored in the OS keychain or encrypted keyring file
+keyring_backend: auto
 defaults:
   drafts_mailbox: Drafts

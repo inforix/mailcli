@@ -24,7 +24,7 @@ func newMailboxesListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List mailboxes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
@@ -53,7 +53,7 @@ func newMailboxesCreateCmd() *cobra.Command {
 		Short: "Create a mailbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

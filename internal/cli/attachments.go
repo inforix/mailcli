@@ -36,7 +36,7 @@ func newAttachmentsDownloadCmd() *cobra.Command {
 				outputDir = "."
 			}
 
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

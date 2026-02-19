@@ -12,10 +12,11 @@ import (
 )
 
 type Config struct {
-	IMAP     IMAPConfig     `mapstructure:"imap" yaml:"imap"`
-	SMTP     SMTPConfig     `mapstructure:"smtp" yaml:"smtp"`
-	Auth     AuthConfig     `mapstructure:"auth" yaml:"auth"`
-	Defaults DefaultsConfig `mapstructure:"defaults" yaml:"defaults"`
+	KeyringBackend string         `mapstructure:"keyring_backend" yaml:"keyring_backend,omitempty"`
+	IMAP           IMAPConfig     `mapstructure:"imap" yaml:"imap"`
+	SMTP           SMTPConfig     `mapstructure:"smtp" yaml:"smtp"`
+	Auth           AuthConfig     `mapstructure:"auth" yaml:"auth"`
+	Defaults       DefaultsConfig `mapstructure:"defaults" yaml:"defaults"`
 }
 
 type IMAPConfig struct {
@@ -36,7 +37,9 @@ type SMTPConfig struct {
 
 type AuthConfig struct {
 	Username string `mapstructure:"username" yaml:"username"`
-	Password string `mapstructure:"password" yaml:"password"`
+	Password string `mapstructure:"password" yaml:"password,omitempty"`
+	// PasswordSource is runtime-only metadata used to avoid persisting secrets back to disk.
+	PasswordSource string `mapstructure:"-" yaml:"-"`
 }
 
 type DefaultsConfig struct {
@@ -62,11 +65,11 @@ func DefaultConfig() Config {
 }
 
 func ConfigPath() (string, error) {
-	home, err := os.UserHomeDir()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "mailcli", "config.yaml"), nil
+	return filepath.Join(dir, "config.yaml"), nil
 }
 
 func Load() (Config, error) {
@@ -100,13 +103,36 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+func LoadFile() (Config, error) {
+	cfg := DefaultConfig()
+
+	path, err := ConfigPath()
+	if err != nil {
+		return cfg, err
+	}
+
+	b, err := os.ReadFile(path) //nolint:gosec // config path is trusted
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return cfg, err
+	}
+
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
+}
+
 func Save(cfg Config) (string, error) {
 	path, err := ConfigPath()
 	if err != nil {
 		return "", err
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if _, err := EnsureDir(); err != nil {
 		return "", err
 	}
 

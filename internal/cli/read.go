@@ -24,7 +24,7 @@ func newReadCmd() *cobra.Command {
 				return fmt.Errorf("invalid uid: %s", args[0])
 			}
 
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

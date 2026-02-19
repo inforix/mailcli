@@ -32,7 +32,7 @@ func newSendCmd() *cobra.Command {
 		Use:   "send",
 		Short: "Send an email",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}

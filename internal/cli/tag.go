@@ -24,7 +24,7 @@ func newTagCmd() *cobra.Command {
 			}
 			tag := args[1]
 
-			cfg, err := config.Load()
+			cfg, err := loadConfig()
 			if err != nil {
 				return err
 			}
